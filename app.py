@@ -1,10 +1,10 @@
 """
 髙橋建築設計事務所 AI社員 LINE Bot
 ハル（個人秘書）がメインで応答。「松陰」「土方」など名前を送ると切り替わる。
+「議事録」で議事録作成モードに切り替わる。
 """
 
 import os
-import json
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -39,6 +39,7 @@ AI_PROFILES = {
             "社長の情報：髙橋裕昭・1988年8月27日生・有限会社髙橋建築設計事務所代表取締役"
             "・仙台JC副議長・長命ヶ丘商店会副会長・妻遥詠・息子悠理。"
         ),
+        "max_tokens": 1024,
     },
     "リンリン": {
         "name": "リンリン",
@@ -48,6 +49,7 @@ AI_PROFILES = {
             "会社・経営・個人すべての業務をサポートします。"
             "LINEで話しかけられています。簡潔に、スマホで読みやすい返答をしてください。"
         ),
+        "max_tokens": 1024,
     },
     "土方": {
         "name": "土方歳三",
@@ -57,6 +59,7 @@ AI_PROFILES = {
             "工事監理・現場管理・監理写真AIが専門です。"
             "LINEで話しかけられています。簡潔に、スマホで読みやすい返答をしてください。"
         ),
+        "max_tokens": 1024,
     },
     "松陰": {
         "name": "吉田松陰",
@@ -66,6 +69,7 @@ AI_PROFILES = {
             "仙台青年会議所の活動・議案・アワードをサポートします。"
             "LINEで話しかけられています。簡潔に、スマホで読みやすい返答をしてください。"
         ),
+        "max_tokens": 1024,
     },
     "龍馬": {
         "name": "坂本龍馬",
@@ -75,6 +79,29 @@ AI_PROFILES = {
             "経営戦略・入札・新規事業をサポートします。"
             "LINEで話しかけられています。簡潔に、スマホで読みやすい返答をしてください。"
         ),
+        "max_tokens": 1024,
+    },
+    "議事録": {
+        "name": "書記",
+        "role": "議事録作成",
+        "system": (
+            "あなたは議事録作成の専門家「書記」です。\n"
+            "送られてきた会議の録音テキスト（文字起こし）から、正式な議事録を作成します。\n"
+            "\n"
+            "【最重要ルール】\n"
+            "・発言内容は原文をできるだけそのまま使用してください。\n"
+            "・要約・言い換え・省略は最小限にとどめてください。\n"
+            "・実際に発言された言葉・表現をそのまま記録してください。\n"
+            "\n"
+            "【議事録の形式】\n"
+            "■ 日時・場所・出席者（テキストから読み取れる範囲で記載）\n"
+            "■ 議題ごとに整理（発言はできるだけ原文のまま）\n"
+            "■ 決定事項・アクション項目（担当者・期限を明記）\n"
+            "■ 次回予定\n"
+            "\n"
+            "スマホで読みやすいよう、見出しと改行を使って整理してください。"
+        ),
+        "max_tokens": 8192,
     },
 }
 
@@ -84,6 +111,34 @@ user_history = {}
 
 SWITCH_KEYWORDS = list(AI_PROFILES.keys())
 
+LINE_MESSAGE_MAX = 4500  # LINE 1メッセージあたりの文字数上限（余裕を持って設定）
+LINE_REPLY_MAX_MESSAGES = 5  # LINE Reply APIの最大メッセージ数
+
+
+def split_messages(text: str) -> list:
+    """長いテキストをLINEのメッセージ上限に合わせて分割する。"""
+    if len(text) <= LINE_MESSAGE_MAX:
+        return [text]
+
+    chunks = []
+    while text and len(chunks) < LINE_REPLY_MAX_MESSAGES:
+        if len(text) <= LINE_MESSAGE_MAX:
+            chunks.append(text)
+            break
+        # 改行で区切れる場所を優先
+        split_pos = text.rfind("\n", 0, LINE_MESSAGE_MAX)
+        if split_pos <= 0:
+            split_pos = LINE_MESSAGE_MAX
+        chunks.append(text[:split_pos].rstrip())
+        text = text[split_pos:].lstrip("\n")
+
+    # 上限を超えた分は最後のメッセージに注記を追加
+    if text and len(chunks) == LINE_REPLY_MAX_MESSAGES:
+        chunks[-1] += "\n\n（続きは次のメッセージをご確認ください）"
+
+    return chunks
+
+
 def get_ai_response(user_id: str, user_message: str) -> str:
     # AI切り替えチェック
     for name in SWITCH_KEYWORDS:
@@ -91,6 +146,12 @@ def get_ai_response(user_id: str, user_message: str) -> str:
             user_ai[user_id] = name
             user_history[user_id] = []
             profile = AI_PROFILES[name]
+            if name == "議事録":
+                return (
+                    f"✅ {profile['name']}（{profile['role']}）モードに切り替えました。\n\n"
+                    "会議の録音テキスト（文字起こし）を貼り付けてください。\n"
+                    "発言内容をできるだけそのままの形で議事録にまとめます。"
+                )
             return f"✅ {profile['name']}（{profile['role']}）に切り替えました。\n何でもどうぞ。"
 
     # 現在のAI取得（デフォルト：ハル）
@@ -105,7 +166,7 @@ def get_ai_response(user_id: str, user_message: str) -> str:
 
     response = ai_client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=profile.get("max_tokens", 1024),
         system=profile["system"],
         messages=history,
     )
@@ -135,12 +196,14 @@ def handle_message(event):
 
     reply_text = get_ai_response(user_id, user_message)
 
+    messages = [TextMessage(text=chunk) for chunk in split_messages(reply_text)]
+
     with ApiClient(line_config) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
             ReplyMessageRequest(
                 reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_text)],
+                messages=messages,
             )
         )
 
