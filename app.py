@@ -85,9 +85,10 @@ user_history = {}
 SWITCH_KEYWORDS = list(AI_PROFILES.keys())
 
 def get_ai_response(user_id: str, user_message: str) -> str:
-    # AI切り替えチェック
+    # AI切り替えチェック（完全一致 or 名前を含む自然な呼び出し）
+    msg = user_message.strip()
     for name in SWITCH_KEYWORDS:
-        if user_message.strip() == name:
+        if msg == name or (name in msg and len(msg) <= len(name) + 10):
             user_ai[user_id] = name
             user_history[user_id] = []
             profile = AI_PROFILES[name]
