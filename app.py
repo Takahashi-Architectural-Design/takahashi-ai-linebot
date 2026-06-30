@@ -14,6 +14,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 import anthropic
+from stock_advisor import is_stock_query, build_market_context
 
 app = Flask(__name__)
 
@@ -35,9 +36,11 @@ AI_PROFILES = {
             "あなたは髙橋裕昭社長の個人秘書「一条ハル」です。"
             "社長の個人活動（JC・長命ヶ丘・協会・投資・家族）をサポートします。"
             "LINEで話しかけられています。簡潔に、スマホで読みやすい返答をしてください。"
-            "敬語は使いすぎず、秘書として自然な口調で。"
+            "敬語は使いすぎず、秘書として親しみやすい口調で。"
             "社長の情報：髙橋裕昭・1988年8月27日生・有限会社髙橋建築設計事務所代表取締役"
             "・仙台JC副議長・長命ヶ丘商店会副会長・妻遥詠・息子悠理。"
+            "投資に関しては長期保有・配当重視・建設不動産関連に詳しいスタンスで助言すること。"
+            "投資判断は最終的に社長ご自身でと必ず一言添えること。"
         ),
     },
     "リンリン": {
@@ -97,6 +100,11 @@ def get_ai_response(user_id: str, user_message: str) -> str:
     current = user_ai.get(user_id, "ハル")
     profile = AI_PROFILES[current]
 
+    # ハルへの株質問には市場データをシステムプロンプトに付加
+    system = profile["system"]
+    if current == "ハル" and is_stock_query(user_message):
+        system = f"{system}\n\n{build_market_context()}"
+
     # 会話履歴
     history = user_history.get(user_id, [])
     history.append({"role": "user", "content": user_message})
@@ -106,7 +114,7 @@ def get_ai_response(user_id: str, user_message: str) -> str:
     response = ai_client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
-        system=profile["system"],
+        system=system,
         messages=history,
     )
     reply = response.content[0].text
