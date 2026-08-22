@@ -15,6 +15,8 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 import anthropic
 
+import jci_alignment
+
 app = Flask(__name__)
 
 # 環境変数から取得
@@ -78,6 +80,14 @@ AI_PROFILES = {
     },
 }
 
+# JC室長には、仙台起点で事業を構築しJCIの方針・評価軸と照らし合わせる判断軸を注入する
+AI_PROFILES["松陰"]["system"] = jci_alignment.build_system_prompt(
+    AI_PROFILES["松陰"]["system"]
+)
+
+# 「整合チェック」で確認シートを返す（AI呼び出しなし）
+WORKSHEET_KEYWORDS = ("整合チェック", "事業チェック", "アワード整合")
+
 # ユーザーごとの現在のAI（セッション管理・簡易版）
 user_ai = {}
 user_history = {}
@@ -92,6 +102,13 @@ def get_ai_response(user_id: str, user_message: str) -> str:
             user_history[user_id] = []
             profile = AI_PROFILES[name]
             return f"✅ {profile['name']}（{profile['role']}）に切り替えました。\n何でもどうぞ。"
+
+    # 確認シート（JC室長に切り替えてから返す。別のAIと話していた履歴は引き継がない）
+    if user_message.strip() in WORKSHEET_KEYWORDS:
+        if user_ai.get(user_id) != "松陰":
+            user_ai[user_id] = "松陰"
+            user_history[user_id] = []
+        return jci_alignment.worksheet()
 
     # 現在のAI取得（デフォルト：ハル）
     current = user_ai.get(user_id, "ハル")
