@@ -1,4 +1,13 @@
 flask==3.0.3
 line-bot-sdk==3.12.0
-anthropic==0.30.1
 gunicorn==22.0.0
+
+# --- AIエンジン（使う基盤のものだけインストールすればよい）---
+# AI_PROVIDER=anthropic
+anthropic==0.30.1
+# AI_PROVIDER=openai
+# openai==1.51.0
+# AI_PROVIDER=bedrock
+# boto3==1.35.0
+# AI_PROVIDER=gemini
+# google-genai==0.3.0

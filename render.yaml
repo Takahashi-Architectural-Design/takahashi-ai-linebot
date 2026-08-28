@@ -9,5 +9,30 @@ services:
         sync: false
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false
+      # 使用するAI基盤: anthropic | openai | bedrock | gemini
+      - key: AI_PROVIDER
+        value: anthropic
+      # 選んだ基盤に対応するキーだけ設定すればよい
       - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: BEDROCK_MODEL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      # 顧客ごとのAI社員定義（任意）
+      - key: HARUKANA_AGENTS_JSON
         sync: false
